@@ -293,20 +293,7 @@ def engineer_dataframe(df):
     return df
 
 # ------------------------------------------------------
-# LOAD MASTER DATASET
-# ------------------------------------------------------
-default_name = "master_dataset_FY_expanded.xlsx"
 
-if os.path.exists(default_name):
-    print("Found local file:", default_name)
-    df_hist = pd.read_excel(default_name, engine="openpyxl", dtype=object)
-else:
-    print("No local master file found. Upload now.")
-    up = files.upload()
-    fname = list(up.keys())[0]
-    df_hist = pd.read_excel(io.BytesIO(up[fname]), engine="openpyxl", dtype=object)
-
-print("Historical rows:", len(df_hist))
 
 # ------------------------------------------------------
 # TRAIN RIDGE REGRESSION
