@@ -46,6 +46,9 @@ if master_file is not None:
     with st.spinner("Engineering dataset..."):
         df_eng = engineer_dataframe(df_hist)
 
+    # 🔥 STORE HISTORICAL ENGINEERED DATA FOR TREND ANALYSIS
+    st.session_state["history_eng"] = df_eng
+
     # -------------------------------------------------------------------
     # FEATURE SET (INCLUDE HISTORICAL FEATURES)
     # -------------------------------------------------------------------
@@ -95,6 +98,7 @@ if master_file is not None:
             st.error("Insufficient data to train the model.")
 
 
+
 # -----------------------------------------------------------
 # STEP 2 — UPLOAD INPUT FILE FOR PREDICTION
 # -----------------------------------------------------------
@@ -110,7 +114,7 @@ if input_file is not None:
         df_input = pd.read_excel(input_file, engine="openpyxl", dtype=object)
         st.success(f"Input file loaded — {len(df_input)} rows")
 
-        if st.button("Calculate Results"):   # <<<<<< CALCULATE BUTTON
+        if st.button("Calculate Results"):
             ridge = st.session_state["ridge_model"]
             feature_medians = st.session_state["feature_medians"]
             FEATURES = st.session_state["FEATURES"]
@@ -162,8 +166,6 @@ if input_file is not None:
             selected_company = st.selectbox("Select a company", company_list)
 
             company_results = df_results[df_results["Company Name"] == selected_company]
-            df_company_hist = df_input_eng[df_input_eng["Company Name"] == selected_company].sort_values("FY_num")
-
             latest_row = company_results.iloc[-1]
 
             # -----------------------------------------------------------
@@ -206,18 +208,22 @@ if input_file is not None:
                 card("Risk Band (ML)", latest_row["RiskBand_Ridge"], rb_color_ml)
 
             # -----------------------------------------------------------
-            # ADVANCED TREND GRAPH (2021-2025)
+            # ADVANCED TREND GRAPH — HISTORICAL FROM MASTER + ML PREDICTION
             # -----------------------------------------------------------
-            st.markdown("### 📈 FH Score Trend (2021–2025)")
+            st.markdown("### 📈 FH Score Trend (2021–2026)")
 
-            # Prepare historical trend
-            trend_df = df_company_hist[["FY_num", "FH_Score"]].dropna()
-            trend_df = trend_df.sort_values("FY_num")
+            # Load historical engineered dataset
+            if "history_eng" in st.session_state:
+                df_history = st.session_state["history_eng"]
+            else:
+                df_history = df_input_eng  # fallback
 
-            years = trend_df["FY_num"].tolist()
-            scores = trend_df["FH_Score"].tolist()
+            hist_company = df_history[df_history["Company Name"] == selected_company].sort_values("FY_num")
 
-            # Add predicted year
+            years = hist_company["FY_num"].tolist()
+            scores = hist_company["FH_Score"].tolist()
+
+            # Append predicted year
             next_year = max(years) + 1
             years.append(next_year)
             scores.append(latest_row["FH_Score_Ridge"])
@@ -231,23 +237,28 @@ if input_file is not None:
 
             plot_df["Color"] = plot_df["FH_Score"].apply(score_to_color)
 
-            fig, ax = plt.subplots(figsize=(8, 4))
+            fig, ax = plt.subplots(figsize=(8,4))
             ax.plot(plot_df["FY"], plot_df["FH_Score"], marker="o", linewidth=2)
 
             for i in range(len(plot_df)):
-                ax.scatter(plot_df["FY"].iloc[i], plot_df["FH_Score"].iloc[i],
-                           color=plot_df["Color"].iloc[i], s=120)
+                ax.scatter(
+                    plot_df["FY"].iloc[i],
+                    plot_df["FH_Score"].iloc[i],
+                    color=plot_df["Color"].iloc[i],
+                    s=120
+                )
+
+            ax.annotate("Predicted",
+                        (next_year, latest_row["FH_Score_Ridge"]),
+                        textcoords="offset points",
+                        xytext=(0,10),
+                        ha='center',
+                        fontsize=9)
 
             ax.set_xlabel("Financial Year")
             ax.set_ylabel("FH Score")
             ax.set_title(f"FH Score Trend for {selected_company}")
             ax.grid(True, linestyle="--", alpha=0.4)
-
-            ax.annotate("Predicted",
-                        (next_year, latest_row["FH_Score_Ridge"]),
-                        textcoords="offset points",
-                        xytext=(0, 10),
-                        ha='center')
 
             st.pyplot(fig)
 
@@ -268,8 +279,10 @@ if input_file is not None:
             else:
                 insights.append("✔ Risk Band same across formula & ML.")
 
-            if len(df_company_hist) >= 2:
-                if df_company_hist["FH_Score"].iloc[-1] > df_company_hist["FH_Score"].iloc[-2]:
+            # Historical trend insight
+            hist_company_sorted = hist_company.sort_values("FY_num")
+            if len(hist_company_sorted) >= 2:
+                if hist_company_sorted["FH_Score"].iloc[-1] > hist_company_sorted["FH_Score"].iloc[-2]:
                     insights.append("📈 Financial health improved vs last FY.")
                 else:
                     insights.append("📉 Financial health declined vs last FY.")
