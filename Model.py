@@ -289,6 +289,49 @@ def engineer_dataframe(df):
 
     doc_cols = [c for c in df.columns if "Uploaded" in c]
     df["Document_Quality_Score"] = df[doc_cols].notna().sum(axis=1)/len(doc_cols)*100 if len(doc_cols)>0 else 50
+# ------------------------------------
+# ADD HISTORICAL TREND FEATURES
+# ------------------------------------
+df["Growth_1Y"] = 0.0
+df["Growth_3Y_Avg"] = 0.0
+df["Trend_Slope"] = 0.0
+
+for comp in df["Company Name"].unique():
+    temp = df[df["Company Name"] == comp].sort_values("FY_num")
+
+    turnovers = temp["Turnover_num"].values
+    fys = temp["FY_num"].values
+
+    # ---------------------------
+    # 1-YEAR TURNOVER GROWTH
+    # ---------------------------
+    g1 = [0]
+    for i in range(1, len(turnovers)):
+        prev = turnovers[i-1]
+        cur = turnovers[i]
+        g1.append((cur - prev) / (prev + 1e-9))
+    df.loc[temp.index, "Growth_1Y"] = g1
+
+    # ---------------------------
+    # 3-YEAR AVG GROWTH
+    # ---------------------------
+    g3 = []
+    for i in range(len(turnovers)):
+        if i < 2:
+            g3.append(0)
+        else:
+            g3.append(np.mean([
+                (turnovers[i] - turnovers[i-1])/(turnovers[i-1]+1e-9),
+                (turnovers[i-1] - turnovers[i-2])/(turnovers[i-2]+1e-9)
+            ]))
+    df.loc[temp.index, "Growth_3Y_Avg"] = g3
+
+    # ---------------------------
+    # REGRESSION TREND SLOPE
+    # ---------------------------
+    if len(turnovers) >= 2:
+        slope = np.polyfit(fys, turnovers, 1)[0]
+        df.loc[temp.index, "Trend_Slope"] = slope
 
     return df
 
