@@ -296,58 +296,6 @@ def engineer_dataframe(df):
 
 
 # ------------------------------------------------------
-# TRAIN RIDGE REGRESSION
-# ------------------------------------------------------
-df_eng = engineer_dataframe(df_hist)
-print("Engineered shape:", df_eng.shape)
-
-if "FH_Score" not in df_eng.columns:
-    raise SystemExit("FH_Score missing after engineering.")
-
-FEATURES = [
-    "Debt_Equity","EBITDA_Margin","PAT_Margin",
-    "DSCR","Current Ratio","ROCE (%)","ROE (%)","Credit Utilization (%)",
-    "DPD_CurrentLoan","Bounced_Cheques","SMA_Flag","CRILC_Exposure_num",
-    "Loan_Type_Code","Collateral_Value_num","LTV_num","Loan_Amount_num","Loan_Tenure_Months",
-    "Existing_Loan_Sanctioned_num","Existing_Loan_Outstanding_num",
-    "Promoter_Risk","Management_Risk","Industry_Risk","ESG_Risk",
-    "Document_Quality_Score","Loan_Type_EWS"
-]
-
-for f in FEATURES:
-    if f not in df_eng.columns:
-        df_eng[f] = np.nan
-
-X_fh = df_eng[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
-feature_medians = X_fh.median(numeric_only=True)
-X_fh = X_fh.fillna(feature_medians)
-
-y_fh = df_eng["FH_Score"].astype(float)
-
-if X_fh.shape[0] >= 10 and y_fh.nunique() > 1:
-    X_train, X_test, y_train, y_test = train_test_split(X_fh, y_fh, test_size=0.2, random_state=42)
-
-    ridge = Ridge(alpha=1.0, random_state=42)
-    ridge.fit(X_train, y_train)
-
-    joblib.dump({
-        "model": ridge,
-        "feature_medians": feature_medians.to_dict(),
-        "model_type": "ridge_regression"
-    }, "fh_ridge_regressor.pkl")
-
-    print("Trained Ridge model saved as fh_ridge_regressor.pkl")
-
-    y_pred = ridge.predict(X_test)
-    print("\nMODEL PERFORMANCE")
-    print("R²   :", r2_score(y_test, y_pred))
-    print("MAE  :", mean_absolute_error(y_test, y_pred))
-    print("RMSE :", mean_squared_error(y_test, y_pred)**0.5)
-else:
-    ridge = None
-    print("Skipping model training — insufficient data.")
-
-# ------------------------------------------------------
 # 🎯 NEW EXCEL INPUT FOR PREDICTION (FINAL)
 # ------------------------------------------------------
 print("\nPlease upload the Excel file for prediction:")
