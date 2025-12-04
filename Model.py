@@ -1,12 +1,6 @@
-import io, re, math, sys, warnings, os
+import io, re, math, warnings
 import pandas as pd
 import numpy as np
-from tqdm import tqdm
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-from sklearn.linear_model import Ridge
-import joblib
-
 
 warnings.filterwarnings("ignore")
 
@@ -89,6 +83,7 @@ def loan_type_code(lt):
     if s.startswith("OD"): return 4
     return 0
 
+
 # ------------------------------------------------------
 # LOAN TYPE EWS
 # ------------------------------------------------------
@@ -123,6 +118,7 @@ def compute_loan_type_ews_row(r):
     credit_comp = np.mean([score_behavior(sma,0,1,2), score_behavior(dpd,0,30,90)])
 
     return float(np.clip(base*0.6 + credit_comp*0.4,0,100))
+
 
 # ------------------------------------------------------
 # FINANCIAL HEALTH SCORING
@@ -206,7 +202,17 @@ def compute_fh_row(r, loan_ews, turnover_history=None):
         0.20*profitability + 0.10*cashflow + 0.05*growth + 0.05*contingent
     )
 
-    return float(np.clip(0.55*financial_health + 0.25*behaviour + 0.10*fraud + 0.10*(loan_ews if loan_ews else 50),0,100))
+    return float(
+        np.clip(
+            0.55*financial_health
+            + 0.25*behaviour
+            + 0.10*fraud
+            + 0.10*((loan_ews) if loan_ews else 50),
+            0,
+            100
+        )
+    )
+
 
 # ------------------------------------------------------
 # SB LABEL
@@ -230,6 +236,7 @@ def sb_label(score):
     if 20<=s<=24: return ("SB15","Very Poor","20-24")
     return ("SB16","Unacceptable","0-19")
 
+
 # ------------------------------------------------------
 # ENGINEER DATAFRAME
 # ------------------------------------------------------
@@ -237,6 +244,9 @@ def engineer_dataframe(df):
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
 
+    # ------------------------------------------
+    # PARSE NUMERIC COLUMNS
+    # ------------------------------------------
     num_cols = [
         "Turnover (₹ Crore)","EBITDA (₹ Crore)","Net Profit (₹ Crore)",
         "Net Worth (₹ Crore)","Total Debt (₹ Crore)","DSCR",
@@ -254,6 +264,9 @@ def engineer_dataframe(df):
     df["Turnover_num"] = df["Turnover (₹ Crore)"].apply(parse_num) if "Turnover (₹ Crore)" in df.columns else np.nan
     df["FY_num"] = df["FY"].apply(parse_num) if "FY" in df.columns else np.nan
 
+    # ------------------------------------------
+    # FH SCORE ROW-WISE (YEARLY)
+    # ------------------------------------------
     fh=[]
     for _, row in df.iterrows():
         comp = row.get("Company Name",None)
@@ -265,6 +278,9 @@ def engineer_dataframe(df):
         fh.append(compute_fh_row(row, row["Loan_Type_EWS"], turnover_history))
     df["FH_Score"] = fh
 
+    # ------------------------------------------
+    # ENGINEERED FEATURES
+    # ------------------------------------------
     df["Debt_Equity"] = df.apply(lambda r: safe_div(parse_num(r.get("Total Debt (₹ Crore)",np.nan)), parse_num(r.get("Net Worth (₹ Crore)",np.nan))), axis=1)
     df["EBITDA_Margin"] = df.apply(lambda r: 100*safe_div(parse_num(r.get("EBITDA (₹ Crore)",np.nan)), parse_num(r.get("Turnover (₹ Crore)",np.nan))), axis=1)
     df["PAT_Margin"] = df.apply(lambda r: 100*safe_div(parse_num(r.get("Net Profit (₹ Crore)",np.nan)), parse_num(r.get("Turnover (₹ Crore)",np.nan))), axis=1)
@@ -289,32 +305,29 @@ def engineer_dataframe(df):
 
     doc_cols = [c for c in df.columns if "Uploaded" in c]
     df["Document_Quality_Score"] = df[doc_cols].notna().sum(axis=1)/len(doc_cols)*100 if len(doc_cols)>0 else 50
-    # ------------------------------------
-    # ADD HISTORICAL TREND FEATURES
-    # ------------------------------------
+
+    # ------------------------------------------------------
+    # 🌟 NEW HISTORY-BASED FEATURES (FULLY INDENTED CORRECTLY)
+    # ------------------------------------------------------
     df["Growth_1Y"] = 0.0
     df["Growth_3Y_Avg"] = 0.0
     df["Trend_Slope"] = 0.0
-    
+
     for comp in df["Company Name"].unique():
         temp = df[df["Company Name"] == comp].sort_values("FY_num")
-    
+
         turnovers = temp["Turnover_num"].values
         fys = temp["FY_num"].values
-    
-        # ---------------------------
-        # 1-YEAR TURNOVER GROWTH
-        # ---------------------------
+
+        # 1-year growth
         g1 = [0]
         for i in range(1, len(turnovers)):
             prev = turnovers[i-1]
             cur = turnovers[i]
             g1.append((cur - prev) / (prev + 1e-9))
         df.loc[temp.index, "Growth_1Y"] = g1
-    
-        # ---------------------------
-        # 3-YEAR AVG GROWTH
-        # ---------------------------
+
+        # 3-year avg growth
         g3 = []
         for i in range(len(turnovers)):
             if i < 2:
@@ -325,16 +338,13 @@ def engineer_dataframe(df):
                     (turnovers[i-1] - turnovers[i-2])/(turnovers[i-2]+1e-9)
                 ]))
         df.loc[temp.index, "Growth_3Y_Avg"] = g3
-    
-        # ---------------------------
-        # REGRESSION TREND SLOPE
-        # ---------------------------
+
+        # Trend slope
         if len(turnovers) >= 2:
             slope = np.polyfit(fys, turnovers, 1)[0]
             df.loc[temp.index, "Trend_Slope"] = slope
 
-return df
-
-# ------------------------------------------------------
-
-
+    # ------------------------------------------------------
+    # FINAL RETURN (INDENTED CORRECTLY)
+    # ------------------------------------------------------
+    return df
