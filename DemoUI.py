@@ -7,9 +7,8 @@ Created on Thu Dec  4 10:17:25 2025
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io, re, os, warnings, joblib
+import io, warnings
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 import matplotlib.pyplot as plt
 
@@ -99,7 +98,9 @@ if st.button("🚀 Calculate Risk"):
     # ==================== TRAIN MODEL ====================
     with st.spinner("Training ML Model using Master Dataset..."):
 
-        X_train_full = df_master[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
+        X_train_full = df_master[FEATURES].applymap(
+            lambda x: parse_num(x) if not pd.isna(x) else np.nan
+        )
         feature_medians = X_train_full.median(numeric_only=True)
         X_train_full = X_train_full.fillna(feature_medians)
 
@@ -114,7 +115,9 @@ if st.button("🚀 Calculate Risk"):
     with st.spinner("Engineering input dataset..."):
         df_input_eng = engineer_dataframe(df_input_raw)
 
-    X_pred = df_input_eng[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
+    X_pred = df_input_eng[FEATURES].applymap(
+        lambda x: parse_num(x) if not pd.isna(x) else np.nan
+    )
     X_pred = X_pred.fillna(feature_medians)
 
     # ==================== PREDICT ====================
@@ -152,7 +155,7 @@ if st.button("🚀 Calculate Risk"):
     comp_result = df_results[df_results["Company Name"] == selected_company].iloc[-1]
     fh_pred = comp_result["FH_Score_Ridge"]
 
-    # ------------------------ COLOR CARDS ------------------------
+    # ------------------------ SCORE CARDS ------------------------
     st.markdown("### 🧩 Score Summary")
 
     col1, col2 = st.columns(2)
@@ -168,7 +171,7 @@ if st.button("🚀 Calculate Risk"):
         st.metric("Risk Band (ML)", comp_result["RiskBand_Ridge"])
 
     # ============================================================
-    #        FORMULA TREND GRAPH (Historical Only)
+    #     FORMULA TREND GRAPH (Historical)
     # ============================================================
     st.markdown("### 📈 Formula FH Trend (Historical)")
 
@@ -176,8 +179,11 @@ if st.button("🚀 Calculate Risk"):
 
     if not hist.empty:
 
+        years_hist = hist["FY_num"].astype(int).tolist()
+
         plt.figure(figsize=(8,4))
-        plt.plot(hist["FY_num"].astype(int), hist["FH_Score"], marker="o")
+        plt.plot(years_hist, hist["FH_Score"], marker="o")
+        plt.xticks(years_hist)
         plt.xlabel("Financial Year")
         plt.ylabel("FH Score (Formula)")
         plt.title(f"Historical FH Trend - {selected_company}")
@@ -188,25 +194,26 @@ if st.button("🚀 Calculate Risk"):
         st.info("No historical records found.")
 
     # ============================================================
-    #        ML TREND GRAPH (Historical + 1-Year Prediction)
+    #     ML TREND GRAPH (Historical + Next FY Prediction)
     # ============================================================
     st.markdown("### 🤖 ML Predicted Trend (Historical + Next FY)")
 
     if not hist.empty:
-        years = hist["FY_num"].astype(int).tolist()
-        ml_scores = hist["FH_Score"].tolist()
 
-        next_year = max(years) + 1
-        years.append(next_year)
-        ml_scores.append(fh_pred)
+        years_ml = hist["FY_num"].astype(int).tolist()
+        scores_ml = hist["FH_Score"].tolist()
+
+        next_year = max(years_ml) + 1
+        years_ml.append(next_year)
+        scores_ml.append(fh_pred)
 
         plt.figure(figsize=(8,4))
-        plt.plot(years, ml_scores, marker="o", color="purple")
+        plt.plot(years_ml, scores_ml, marker="o", color="purple")
+        plt.xticks(years_ml)
         plt.xlabel("Financial Year")
         plt.ylabel("Predicted FH Score")
         plt.title(f"Predicted FH Trend Including {next_year} - {selected_company}")
         plt.grid(alpha=0.3)
-
         st.pyplot(plt)
 
     # ============================================================
