@@ -42,7 +42,6 @@ if master_file is not None:
     df_master_raw = pd.read_excel(master_file, engine="openpyxl", dtype=object)
     st.success(f"Master dataset loaded — {len(df_master_raw)} rows")
 
-    # Engineer & store
     with st.spinner("Engineering master dataset..."):
         df_master_eng = engineer_dataframe(df_master_raw)
 
@@ -69,9 +68,7 @@ st.subheader("3️⃣ Run Complete Risk Analysis")
 
 if st.button("🚀 Calculate Risk"):
 
-    # -------------------------------------------
-    # Safety Checks
-    # -------------------------------------------
+    # ==================== SAFETY CHECKS ====================
     if "MASTER_ENG" not in st.session_state:
         st.error("Upload Master Dataset first.")
         st.stop()
@@ -83,9 +80,7 @@ if st.button("🚀 Calculate Risk"):
     df_master = st.session_state["MASTER_ENG"]
     df_input_raw = st.session_state["INPUT_RAW"]
 
-    # -------------------------------------------
-    # Feature List
-    # -------------------------------------------
+    # ==================== FEATURE LIST ====================
     FEATURES = [
         "Debt_Equity","EBITDA_Margin","PAT_Margin",
         "DSCR","Current Ratio","ROCE (%)","ROE (%)","Credit Utilization (%)",
@@ -97,14 +92,11 @@ if st.button("🚀 Calculate Risk"):
         "Growth_1Y","Growth_3Y_Avg","Trend_Slope"
     ]
 
-    # Ensure missing feature columns exist
     for f in FEATURES:
         if f not in df_master.columns:
             df_master[f] = np.nan
 
-    # -------------------------------------------
-    # TRAIN MODEL ON MASTER
-    # -------------------------------------------
+    # ==================== TRAIN MODEL ====================
     with st.spinner("Training ML Model using Master Dataset..."):
 
         X_train_full = df_master[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
@@ -118,28 +110,23 @@ if st.button("🚀 Calculate Risk"):
 
         st.success("Training Completed!")
 
-    # -------------------------------------------
-    # ENGINEER INPUT DATA FOR PREDICTION
-    # -------------------------------------------
+    # ==================== PREP INPUT ====================
     with st.spinner("Engineering input dataset..."):
         df_input_eng = engineer_dataframe(df_input_raw)
 
     X_pred = df_input_eng[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
     X_pred = X_pred.fillna(feature_medians)
 
-    # -------------------------------------------
-    # PREDICT
-    # -------------------------------------------
+    # ==================== PREDICT ====================
     results = []
-
     for idx, row in df_input_eng.iterrows():
 
         fh_formula = row["FH_Score"]
-        sb_f, sb_desc_f, sb_range_f = sb_label(fh_formula)
+        sb_f, _, _ = sb_label(fh_formula)
         rb_formula = categorize_score_numeric(fh_formula)
 
         fh_ml = ridge.predict(X_pred.iloc[[idx]])[0]
-        sb_ml, sb_desc_ml, sb_range_ml = sb_label(fh_ml)
+        sb_ml, _, _ = sb_label(fh_ml)
         rb_ml = categorize_score_numeric(fh_ml)
 
         results.append({
@@ -155,63 +142,58 @@ if st.button("🚀 Calculate Risk"):
     df_results = pd.DataFrame(results)
 
     # ============================================================
-    #   SECTION 4 — DASHBOARD & GRAPHS
+    #                     DASHBOARD
     # ============================================================
     st.subheader("📌 Company Dashboard")
 
     company_list = df_input_eng["Company Name"].dropna().unique()
     selected_company = st.selectbox("Select a company", company_list)
 
-    comp_results = df_results[df_results["Company Name"] == selected_company].iloc[-1]
-    fh_pred = comp_results["FH_Score_Ridge"]
+    comp_result = df_results[df_results["Company Name"] == selected_company].iloc[-1]
+    fh_pred = comp_result["FH_Score_Ridge"]
 
-    # -------------------------------
-    # COLOR CARDS
-    # -------------------------------
+    # ------------------------ COLOR CARDS ------------------------
     st.markdown("### 🧩 Score Summary")
-
-    def get_color(rb):
-        return "#2ECC71" if rb=="Low" else "#F1C40F" if rb=="Moderate" else "#E74C3C"
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.metric("FH Score (Formula)", f"{comp_results['FH_Score_Formula']:.2f}")
-        st.metric("SB Rating (Formula)", comp_results["SB_Formula"])
-        st.metric("Risk Band (Formula)", comp_results["RiskBand_Formula"])
+        st.metric("FH Score (Formula)", f"{comp_result['FH_Score_Formula']:.2f}")
+        st.metric("SB Rating (Formula)", comp_result["SB_Formula"])
+        st.metric("Risk Band (Formula)", comp_result["RiskBand_Formula"])
 
     with col2:
-        st.metric("FH Score (ML)", f"{fh_pred:.2f}")
-        st.metric("SB Rating (ML)", comp_results["SB_Ridge"])
-        st.metric("Risk Band (ML)", comp_results["RiskBand_Ridge"])
+        st.metric("FH Score (ML Prediction)", f"{fh_pred:.2f}")
+        st.metric("SB Rating (ML)", comp_result["SB_Ridge"])
+        st.metric("Risk Band (ML)", comp_result["RiskBand_Ridge"])
 
-
-    # -----------------------------------------------------------
-    # FORMULA FH TREND (Historical only)
-    # -----------------------------------------------------------
+    # ============================================================
+    #        FORMULA TREND GRAPH (Historical Only)
+    # ============================================================
     st.markdown("### 📈 Formula FH Trend (Historical)")
 
     hist = df_master[df_master["Company Name"] == selected_company].sort_values("FY_num")
 
     if not hist.empty:
+
         plt.figure(figsize=(8,4))
-        plt.plot(hist["FY_num"], hist["FH_Score"], marker="o")
-        plt.grid(alpha=0.3)
+        plt.plot(hist["FY_num"].astype(int), hist["FH_Score"], marker="o")
         plt.xlabel("Financial Year")
         plt.ylabel("FH Score (Formula)")
-        plt.title(f"Historical FH Score Trend - {selected_company}")
+        plt.title(f"Historical FH Trend - {selected_company}")
+        plt.grid(alpha=0.3)
         st.pyplot(plt)
+
     else:
-        st.info("No historical data found for this company.")
+        st.info("No historical records found.")
 
-
-    # -----------------------------------------------------------
-    # PREDICTED TREND (Current + Next Year)
-    # -----------------------------------------------------------
-    st.markdown("### 🤖 ML Predicted Trend (Including Next FY)")
+    # ============================================================
+    #        ML TREND GRAPH (Historical + 1-Year Prediction)
+    # ============================================================
+    st.markdown("### 🤖 ML Predicted Trend (Historical + Next FY)")
 
     if not hist.empty:
-        years = hist["FY_num"].tolist()
+        years = hist["FY_num"].astype(int).tolist()
         ml_scores = hist["FH_Score"].tolist()
 
         next_year = max(years) + 1
@@ -220,23 +202,23 @@ if st.button("🚀 Calculate Risk"):
 
         plt.figure(figsize=(8,4))
         plt.plot(years, ml_scores, marker="o", color="purple")
-        plt.grid(alpha=0.3)
         plt.xlabel("Financial Year")
-        plt.ylabel("Predicted FH Score (ML)")
-        plt.title(f"Predicted Trend (Including {next_year}) - {selected_company}")
+        plt.ylabel("Predicted FH Score")
+        plt.title(f"Predicted FH Trend Including {next_year} - {selected_company}")
+        plt.grid(alpha=0.3)
+
         st.pyplot(plt)
 
-
-    # -----------------------------------------------------------
+    # ============================================================
     # DOWNLOAD RESULTS
-    # -----------------------------------------------------------
+    # ============================================================
     st.subheader("📊 Download Results")
 
     output = io.BytesIO()
     df_results.to_excel(output, index=False, engine="openpyxl")
 
     st.download_button(
-        label="📥 Download Full Results",
+        label="📥 Download Results",
         data=output.getvalue(),
         file_name="FH_Scoring_Results.xlsx",
         mime="application/vnd.ms-excel"
