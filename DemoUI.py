@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Dec  4 10:17:25 2025
-
 @author: vidya
 """
 
@@ -12,6 +11,7 @@ import io, re, os, warnings, joblib
 from sklearn.linear_model import Ridge
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
 from Model import (
     engineer_dataframe,
     sb_label,
@@ -19,22 +19,7 @@ from Model import (
     parse_num
 )
 
-
-
 warnings.filterwarnings("ignore")
-
-# -------------------------
-# IMPORT FUNCTIONS FROM YOUR LOGIC
-# -------------------------
-# (Copy all your helper functions here exactly as they are)
-# SAFE HELPERS
-# LOAN TYPE EWS
-# FINANCIAL HEALTH SCORING
-# SB LABEL
-# ENGINEER DATAFRAME
-# (Paste everything above this Streamlit code)
-# -------------------------
-
 
 # -------------------------
 # STREAMLIT UI
@@ -60,7 +45,9 @@ if master_file is not None:
     with st.spinner("Engineering dataset..."):
         df_eng = engineer_dataframe(df_hist)
 
-    # FEATURE SET
+    # -------------------------------------------------------------------
+    # FEATURE SET (INCLUDE HISTORICAL FEATURES)
+    # -------------------------------------------------------------------
     FEATURES = [
         "Debt_Equity","EBITDA_Margin","PAT_Margin",
         "DSCR","Current Ratio","ROCE (%)","ROE (%)","Credit Utilization (%)",
@@ -68,21 +55,24 @@ if master_file is not None:
         "Loan_Type_Code","Collateral_Value_num","LTV_num","Loan_Amount_num","Loan_Tenure_Months",
         "Existing_Loan_Sanctioned_num","Existing_Loan_Outstanding_num",
         "Promoter_Risk","Management_Risk","Industry_Risk","ESG_Risk",
-        "Document_Quality_Score","Loan_Type_EWS","Growth_1Y","Growth_3Y_Avg","Trend_Slope"
-
+        "Document_Quality_Score","Loan_Type_EWS",
+        "Growth_1Y","Growth_3Y_Avg","Trend_Slope"   # NEW HISTORICAL FEATURES
     ]
 
+    # Ensure all features exist
     for f in FEATURES:
         if f not in df_eng.columns:
             df_eng[f] = np.nan
 
+    # CLEAN TRAINING MATRIX
     X_fh = df_eng[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
+
     feature_medians = X_fh.median(numeric_only=True)
     X_fh = X_fh.fillna(feature_medians)
 
     y_fh = df_eng["FH_Score"].astype(float)
 
-    # TRAINING
+    # TRAINING BUTTON
     if st.button("Train Ridge Regression Model"):
         if X_fh.shape[0] >= 10 and y_fh.nunique() > 1:
             with st.spinner("Training Ridge model..."):
@@ -95,7 +85,7 @@ if master_file is not None:
 
                 st.success("Model trained successfully!")
 
-                # SHOW METRICS
+                # METRICS
                 y_pred = ridge.predict(X_test)
                 st.write("### 📈 Model Performance")
                 st.write(f"**R² Score:** {r2_score(y_test, y_pred):.4f}")
@@ -104,6 +94,7 @@ if master_file is not None:
 
                 st.session_state["ridge_model"] = ridge
                 st.session_state["feature_medians"] = feature_medians
+                st.session_state["FEATURES"] = FEATURES
 
         else:
             st.error("Insufficient data to train the model.")
@@ -124,13 +115,16 @@ if input_file is not None:
     else:
         ridge = st.session_state["ridge_model"]
         feature_medians = st.session_state["feature_medians"]
+        FEATURES = st.session_state["FEATURES"]
 
         df_input = pd.read_excel(input_file, engine="openpyxl", dtype=object)
         st.success(f"Input file loaded — {len(df_input)} rows")
 
+        # ENGINEER INPUT DATA
         with st.spinner("Engineering input data..."):
             df_input_eng = engineer_dataframe(df_input)
 
+        # CLEAN PREDICTION MATRIX
         X_pred = df_input_eng[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
         X_pred = X_pred.fillna(feature_medians)
 
@@ -140,21 +134,26 @@ if input_file is not None:
             loan_ews_val = row["Loan_Type_EWS"]
             fh_formula = row["FH_Score"]
 
+            # FORMULA RESULTS
             sb_f, sb_desc_f, sb_range_f = sb_label(fh_formula)
             rb_formula = categorize_score_numeric(fh_formula)
 
+            # ML PREDICTION
             fh_ml = ridge.predict(X_pred.iloc[[idx]])[0]
+
             sb_ml, sb_desc_ml, sb_range_ml = sb_label(fh_ml)
             rb_ml = categorize_score_numeric(fh_ml)
 
             results.append({
                 "Company Name": row.get("Company Name",""),
                 "Loan_Type_EWS": loan_ews_val,
+
                 "FH_Score_Formula": fh_formula,
                 "SB_Formula": sb_f,
                 "SB_Description_Formula": sb_desc_f,
                 "SB_Range_Formula": sb_range_f,
                 "RiskBand_Formula": rb_formula,
+
                 "FH_Score_Ridge": fh_ml,
                 "SB_Ridge": sb_ml,
                 "SB_Description_Ridge": sb_desc_ml,
@@ -167,16 +166,14 @@ if input_file is not None:
         st.subheader("📊 Prediction Results")
         st.dataframe(df_results)
 
-        # Download button
+
+        # DOWNLOAD EXCEL
         output = io.BytesIO()
         df_results.to_excel(output, index=False, engine="openpyxl")
+
         st.download_button(
             label="📥 Download Results as Excel",
             data=output.getvalue(),
             file_name="FH_Scoring_Results.xlsx",
             mime="application/vnd.ms-excel"
         )
-
-
-
-
