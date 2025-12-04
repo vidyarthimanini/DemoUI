@@ -333,7 +333,7 @@ for comp in df["Company Name"].unique():
         slope = np.polyfit(fys, turnovers, 1)[0]
         df.loc[temp.index, "Trend_Slope"] = slope
 
-    return df
+return df
 
 # ------------------------------------------------------
 
