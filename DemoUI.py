@@ -165,6 +165,83 @@ if input_file is not None:
 
         st.subheader("📊 Prediction Results")
         st.dataframe(df_results)
+                # -----------------------------------------------------------
+        # 📈 ADVANCED VISUAL DASHBOARD
+        # -----------------------------------------------------------
+        
+        st.subheader("📌 Company-wise Dashboard")
+        
+        selected_company = st.selectbox(
+            "Select a company to view detailed performance",
+            df_input_eng["Company Name"].unique()
+        )
+        
+        df_company_hist = df_input_eng[df_input_eng["Company Name"] == selected_company].sort_values("FY_num")
+        
+        # --------------------
+        # LINE CHART — FH Trend
+        # --------------------
+        st.markdown("### 📈 FH Score Trend Across Years")
+        
+        if "FY_num" in df_company_hist.columns:
+            trend_df = pd.DataFrame({
+                "FY": df_company_hist["FY_num"],
+                "FH_Score": df_company_hist["FH_Score"]
+            })
+            trend_df = trend_df.dropna()
+        
+            st.line_chart(
+                trend_df.set_index("FY"),
+                height=250
+            )
+        
+        # --------------------
+        # INFO CARDS
+        # --------------------
+        st.markdown("### 🧩 Score Summary")
+        
+        latest_row = df_results[df_results["Company Name"] == selected_company].iloc[0]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("FH Score (Formula)", f"{latest_row['FH_Score_Formula']:.2f}")
+            st.metric("SB Rating (Formula)", latest_row["SB_Formula"])
+            st.metric("Risk Band (Formula)", latest_row["RiskBand_Formula"])
+        
+        with col2:
+            st.metric("FH Score (ML Prediction)", f"{latest_row['FH_Score_Ridge']:.2f}")
+            st.metric("SB Rating (ML)", latest_row["SB_Ridge"])
+            st.metric("Risk Band (ML)", latest_row["RiskBand_Ridge"])
+        
+        # --------------------
+        # INSIGHTS
+        # --------------------
+        st.markdown("### 📝 Insights")
+        
+        imp = []
+        
+        # Comparison insights
+        if latest_row["FH_Score_Ridge"] > latest_row["FH_Score_Formula"]:
+            imp.append("📌 ML predicts **better financial health** compared to the formula score.")
+        else:
+            imp.append("📌 ML predicts **weaker financial health** than the formula score.")
+        
+        # Risk band note
+        if latest_row["RiskBand_Ridge"] != latest_row["RiskBand_Formula"]:
+            imp.append(f"🔄 Risk Band changed: **{latest_row['RiskBand_Formula']} → {latest_row['RiskBand_Ridge']}**")
+        else:
+            imp.append("✔ Risk Band remains consistent between formula & ML model.")
+        
+        # Trend insight
+        if len(df_company_hist) >= 2:
+            if df_company_hist["FH_Score"].iloc[-1] > df_company_hist["FH_Score"].iloc[-2]:
+                imp.append("📈 Financial health **improved vs last FY**.")
+            else:
+                imp.append("📉 Financial health **declined vs last FY**.")
+        
+        for i in imp:
+            st.write(i)
 
 
         # DOWNLOAD EXCEL
@@ -177,3 +254,4 @@ if input_file is not None:
             file_name="FH_Scoring_Results.xlsx",
             mime="application/vnd.ms-excel"
         )
+
