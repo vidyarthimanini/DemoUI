@@ -33,7 +33,7 @@ st.sidebar.header("⚙ Settings")
 # ============================================================
 #   SECTION 1 — UPLOAD MASTER DATASET (Training Data)
 # ============================================================
-st.subheader("1️⃣ Upload Master Dataset (Historic FY Data)")
+st.subheader(" Upload Master Dataset ")
 
 master_file = st.file_uploader("Upload master Excel file", type=["xlsx"], key="master")
 
@@ -50,7 +50,7 @@ if master_file is not None:
 # ============================================================
 #   SECTION 2 — UPLOAD INPUT DATASET (Prediction Input)
 # ============================================================
-st.subheader("2️⃣ Upload Input Excel for Prediction")
+st.subheader("Upload Input Excel for Prediction")
 
 input_file = st.file_uploader("Upload input Excel file", type=["xlsx"], key="input")
 
@@ -63,9 +63,9 @@ if input_file is not None:
 # ============================================================
 #   SECTION 3 — SINGLE BUTTON → TRAIN + PREDICT + DASHBOARD
 # ============================================================
-st.subheader("3️⃣ Run Complete Risk Analysis")
+st.subheader("Run Complete Risk Analysis")
 
-if st.button("🚀 Calculate Risk"):
+if st.button("Calculate Risk"):
 
     # ==================== SAFETY CHECKS ====================
     if "MASTER_ENG" not in st.session_state:
@@ -147,7 +147,7 @@ if st.button("🚀 Calculate Risk"):
     # ============================================================
     #                     DASHBOARD
     # ============================================================
-    st.subheader("📌 Company Dashboard")
+    st.subheader("Company Dashboard")
 
     company_list = df_input_eng["Company Name"].dropna().unique()
     selected_company = st.selectbox("Select a company", company_list)
@@ -156,7 +156,7 @@ if st.button("🚀 Calculate Risk"):
     fh_pred = comp_result["FH_Score_Ridge"]
 
     # ------------------------ SCORE CARDS ------------------------
-    st.markdown("### 🧩 Score Summary")
+    st.markdown(" Score Summary")
 
     col1, col2 = st.columns(2)
 
@@ -173,7 +173,7 @@ if st.button("🚀 Calculate Risk"):
     # ============================================================
     #     FORMULA TREND GRAPH (Historical)
     # ============================================================
-    st.markdown("### 📈 Formula FH Trend (Historical)")
+    st.markdown(" 📈 Formula FH Trend (Historical)")
 
     hist = df_master[df_master["Company Name"] == selected_company].sort_values("FY_num")
 
@@ -194,9 +194,9 @@ if st.button("🚀 Calculate Risk"):
         st.info("No historical records found.")
 
     # ============================================================
-    #     ML TREND GRAPH (Historical + Next FY Prediction)
+    #     ML TREND GRAPH (Next FY Prediction)
     # ============================================================
-    st.markdown("### 🤖 ML Predicted Trend (Historical + Next FY)")
+    st.markdown(" ML Predicted Trend ( Next FY)")
 
     if not hist.empty:
 
@@ -230,3 +230,4 @@ if st.button("🚀 Calculate Risk"):
         file_name="FH_Scoring_Results.xlsx",
         mime="application/vnd.ms-excel"
     )
+
