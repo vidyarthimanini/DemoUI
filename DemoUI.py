@@ -11,6 +11,7 @@ import io, re, os, warnings, joblib
 from sklearn.linear_model import Ridge
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+import matplotlib.pyplot as plt
 
 from Model import (
     engineer_dataframe,
@@ -56,23 +57,19 @@ if master_file is not None:
         "Existing_Loan_Sanctioned_num","Existing_Loan_Outstanding_num",
         "Promoter_Risk","Management_Risk","Industry_Risk","ESG_Risk",
         "Document_Quality_Score","Loan_Type_EWS",
-        "Growth_1Y","Growth_3Y_Avg","Trend_Slope"   # NEW HISTORICAL FEATURES
+        "Growth_1Y","Growth_3Y_Avg","Trend_Slope"
     ]
 
-    # Ensure all features exist
     for f in FEATURES:
         if f not in df_eng.columns:
             df_eng[f] = np.nan
 
-    # CLEAN TRAINING MATRIX
     X_fh = df_eng[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
-
     feature_medians = X_fh.median(numeric_only=True)
     X_fh = X_fh.fillna(feature_medians)
 
     y_fh = df_eng["FH_Score"].astype(float)
 
-    # TRAINING BUTTON
     if st.button("Train Ridge Regression Model"):
         if X_fh.shape[0] >= 10 and y_fh.nunique() > 1:
             with st.spinner("Training Ridge model..."):
@@ -85,14 +82,12 @@ if master_file is not None:
 
                 st.success("Model trained successfully!")
 
-                # METRICS
                 y_pred = ridge.predict(X_test)
                 st.write("### 📈 Model Performance")
                 st.write(f"**R² Score:** {r2_score(y_test, y_pred):.4f}")
                 st.write(f"**MAE:** {mean_absolute_error(y_test, y_pred):.4f}")
                 st.write(f"**RMSE:** {mean_squared_error(y_test, y_pred)**0.5:.4f}")
 
-                # Save objects for Step 2
                 st.session_state["ridge_model"] = ridge
                 st.session_state["feature_medians"] = feature_medians
                 st.session_state["FEATURES"] = FEATURES
@@ -115,8 +110,7 @@ if input_file is not None:
         df_input = pd.read_excel(input_file, engine="openpyxl", dtype=object)
         st.success(f"Input file loaded — {len(df_input)} rows")
 
-        # CALCULATE BUTTON — nothing runs until this is clicked
-        if st.button("Calculate Results"):
+        if st.button("Calculate Results"):   # <<<<<< CALCULATE BUTTON
             ridge = st.session_state["ridge_model"]
             feature_medians = st.session_state["feature_medians"]
             FEATURES = st.session_state["FEATURES"]
@@ -124,7 +118,6 @@ if input_file is not None:
             with st.spinner("Engineering input data..."):
                 df_input_eng = engineer_dataframe(df_input)
 
-            # CLEAN PREDICTION MATRIX
             X_pred = df_input_eng[FEATURES].applymap(lambda x: parse_num(x) if not pd.isna(x) else np.nan)
             X_pred = X_pred.fillna(feature_medians)
 
@@ -134,11 +127,9 @@ if input_file is not None:
                 loan_ews_val = row["Loan_Type_EWS"]
                 fh_formula = row["FH_Score"]
 
-                # FORMULA RESULTS
                 sb_f, sb_desc_f, sb_range_f = sb_label(fh_formula)
                 rb_formula = categorize_score_numeric(fh_formula)
 
-                # ML PREDICTION
                 fh_ml = ridge.predict(X_pred.iloc[[idx]])[0]
                 sb_ml, sb_desc_ml, sb_range_ml = sb_label(fh_ml)
                 rb_ml = categorize_score_numeric(fh_ml)
@@ -163,138 +154,131 @@ if input_file is not None:
             df_results = pd.DataFrame(results)
 
             # -----------------------------------------------------------
-            # COMPANY SELECTION
+            # COMPANY DASHBOARD
             # -----------------------------------------------------------
             st.subheader("📌 Company-wise Dashboard")
 
             company_list = df_input_eng["Company Name"].dropna().unique()
-            if len(company_list) == 0:
-                st.warning("No company names found in the input file.")
-            else:
-                selected_company = st.selectbox(
-                    "Select a company to view detailed performance",
-                    company_list
-                )
+            selected_company = st.selectbox("Select a company", company_list)
 
-                # Filter results & history for selected company
-                company_results = df_results[df_results["Company Name"] == selected_company]
-                df_company_hist = df_input_eng[df_input_eng["Company Name"] == selected_company].sort_values("FY_num")
+            company_results = df_results[df_results["Company Name"] == selected_company]
+            df_company_hist = df_input_eng[df_input_eng["Company Name"] == selected_company].sort_values("FY_num")
 
-                if company_results.empty:
-                    st.warning("No result rows found for the selected company.")
-                else:
-                    latest_row = company_results.iloc[-1]
-
-                    # -----------------------------------------------------------
-                    # COLOR CODED SCORE CARDS
-                    # -----------------------------------------------------------
-                    st.markdown("### 🧩 Score Summary (Color Coded)")
-
-                    def color_card(title, value, color):
-                        st.markdown(f"""
-                            <div style="
-                                background-color:{color};
-                                padding:15px;
-                                border-radius:10px;
-                                margin-bottom:10px;
-                                color:white;
-                                font-weight:bold;
-                            ">
-                                {title}: {value}
-                            </div>
-                        """, unsafe_allow_html=True)
-
-                    def get_color(risk_band):
-                        if risk_band == "Low": return "#2ECC71"       # green
-                        if risk_band == "Moderate": return "#F1C40F"  # yellow
-                        return "#E74C3C"                              # red
-
-                    rb_formula_color = get_color(latest_row["RiskBand_Formula"])
-                    rb_ml_color = get_color(latest_row["RiskBand_Ridge"])
-
-                    colf, colm = st.columns(2)
-
-                    with colf:
-                        color_card("FH Score (Formula)", f"{latest_row['FH_Score_Formula']:.2f}", rb_formula_color)
-                        color_card("SB Rating (Formula)", latest_row["SB_Formula"], rb_formula_color)
-                        color_card("Risk Band (Formula)", latest_row["RiskBand_Formula"], rb_formula_color)
-
-                    with colm:
-                        color_card("FH Score (ML Prediction)", f"{latest_row['FH_Score_Ridge']:.2f}", rb_ml_color)
-                        color_card("SB Rating (ML)", latest_row["SB_Ridge"], rb_ml_color)
-                        color_card("Risk Band (ML)", latest_row["RiskBand_Ridge"], rb_ml_color)
-
-                    # -----------------------------------------------------------
-                    # FH SCORE TREND ACROSS YEARS (FORMULA)
-                    # -----------------------------------------------------------
-                    st.markdown("### 📈 FH Score Trend Across Years (Formula)")
-
-                    if "FY_num" in df_company_hist.columns:
-                        trend_df = pd.DataFrame({
-                            "FY": df_company_hist["FY_num"],
-                            "FH_Score_Formula": df_company_hist["FH_Score"]
-                        }).dropna()
-
-                        if not trend_df.empty:
-                            st.line_chart(
-                                trend_df.set_index("FY"),
-                                height=250
-                            )
-                        else:
-                            st.info("No valid FH_Score values to plot for this company.")
-                    else:
-                        st.info("FY_num column not available for trend analysis.")
-
-                    # -----------------------------------------------------------
-                    # METRIC CARDS (TEXTUAL SUMMARY)
-                    # -----------------------------------------------------------
-                    st.markdown("### 📋 Score Details")
-
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.metric("FH Score (Formula)", f"{latest_row['FH_Score_Formula']:.2f}")
-                        st.metric("SB Rating (Formula)", latest_row["SB_Formula"])
-                        st.metric("Risk Band (Formula)", latest_row["RiskBand_Formula"])
-
-                    with col2:
-                        st.metric("FH Score (ML Prediction)", f"{latest_row['FH_Score_Ridge']:.2f}")
-                        st.metric("SB Rating (ML)", latest_row["SB_Ridge"])
-                        st.metric("Risk Band (ML)", latest_row["RiskBand_Ridge"])
-
-                    # -----------------------------------------------------------
-                    # INSIGHTS
-                    # -----------------------------------------------------------
-                    st.markdown("### 📝 Insights")
-
-                    insights = []
-
-                    # Comparison insights
-                    if latest_row["FH_Score_Ridge"] > latest_row["FH_Score_Formula"]:
-                        insights.append("📌 ML predicts **better financial health** compared to the formula score.")
-                    else:
-                        insights.append("📌 ML predicts **weaker financial health** than the formula score.")
-
-                    # Risk band note
-                    if latest_row["RiskBand_Ridge"] != latest_row["RiskBand_Formula"]:
-                        insights.append(
-                            f"🔄 Risk Band changed: **{latest_row['RiskBand_Formula']} → {latest_row['RiskBand_Ridge']}**"
-                        )
-                    else:
-                        insights.append("✔ Risk Band remains consistent between formula & ML model.")
-
-                    # Trend insight
-                    if len(df_company_hist) >= 2:
-                        if df_company_hist["FH_Score"].iloc[-1] > df_company_hist["FH_Score"].iloc[-2]:
-                            insights.append("📈 Financial health **improved vs last FY**.")
-                        else:
-                            insights.append("📉 Financial health **declined vs last FY**.")
-
-                    for line in insights:
-                        st.write(line)
+            latest_row = company_results.iloc[-1]
 
             # -----------------------------------------------------------
-            # TABULAR RESULTS + DOWNLOAD
+            # COLOR CODED SCORE CARDS
+            # -----------------------------------------------------------
+            st.markdown("### 🧩 Score Summary (Color Coded)")
+
+            def get_color(risk_band):
+                if risk_band == "Low": return "#2ECC71"
+                if risk_band == "Moderate": return "#F1C40F"
+                return "#E74C3C"
+
+            def card(title, value, color):
+                st.markdown(f"""
+                <div style="
+                    background-color:{color};
+                    padding:15px;
+                    border-radius:10px;
+                    margin-bottom:10px;
+                    color:white;
+                    font-weight:bold;
+                ">
+                    {title}: {value}
+                </div>
+                """, unsafe_allow_html=True)
+
+            rb_color_formula = get_color(latest_row["RiskBand_Formula"])
+            rb_color_ml = get_color(latest_row["RiskBand_Ridge"])
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                card("FH Score (Formula)", f"{latest_row['FH_Score_Formula']:.2f}", rb_color_formula)
+                card("SB Rating (Formula)", latest_row["SB_Formula"], rb_color_formula)
+                card("Risk Band (Formula)", latest_row["RiskBand_Formula"], rb_color_formula)
+
+            with col2:
+                card("FH Score (ML)", f"{latest_row['FH_Score_Ridge']:.2f}", rb_color_ml)
+                card("SB Rating (ML)", latest_row["SB_Ridge"], rb_color_ml)
+                card("Risk Band (ML)", latest_row["RiskBand_Ridge"], rb_color_ml)
+
+            # -----------------------------------------------------------
+            # ADVANCED TREND GRAPH (2021-2025)
+            # -----------------------------------------------------------
+            st.markdown("### 📈 FH Score Trend (2021–2025)")
+
+            # Prepare historical trend
+            trend_df = df_company_hist[["FY_num", "FH_Score"]].dropna()
+            trend_df = trend_df.sort_values("FY_num")
+
+            years = trend_df["FY_num"].tolist()
+            scores = trend_df["FH_Score"].tolist()
+
+            # Add predicted year
+            next_year = max(years) + 1
+            years.append(next_year)
+            scores.append(latest_row["FH_Score_Ridge"])
+
+            plot_df = pd.DataFrame({"FY": years, "FH_Score": scores})
+
+            def score_to_color(s):
+                if s >= 75: return "#2ECC71"
+                elif s >= 50: return "#F1C40F"
+                return "#E74C3C"
+
+            plot_df["Color"] = plot_df["FH_Score"].apply(score_to_color)
+
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.plot(plot_df["FY"], plot_df["FH_Score"], marker="o", linewidth=2)
+
+            for i in range(len(plot_df)):
+                ax.scatter(plot_df["FY"].iloc[i], plot_df["FH_Score"].iloc[i],
+                           color=plot_df["Color"].iloc[i], s=120)
+
+            ax.set_xlabel("Financial Year")
+            ax.set_ylabel("FH Score")
+            ax.set_title(f"FH Score Trend for {selected_company}")
+            ax.grid(True, linestyle="--", alpha=0.4)
+
+            ax.annotate("Predicted",
+                        (next_year, latest_row["FH_Score_Ridge"]),
+                        textcoords="offset points",
+                        xytext=(0, 10),
+                        ha='center')
+
+            st.pyplot(fig)
+
+            # -----------------------------------------------------------
+            # INSIGHTS
+            # -----------------------------------------------------------
+            st.markdown("### 📝 Insights")
+
+            insights = []
+
+            if latest_row["FH_Score_Ridge"] > latest_row["FH_Score_Formula"]:
+                insights.append("📌 ML predicts **better financial health** than formula.")
+            else:
+                insights.append("📌 ML predicts **weaker financial health** than formula.")
+
+            if latest_row["RiskBand_Ridge"] != latest_row["RiskBand_Formula"]:
+                insights.append(f"🔄 Risk Band changed: **{latest_row['RiskBand_Formula']} → {latest_row['RiskBand_Ridge']}**")
+            else:
+                insights.append("✔ Risk Band same across formula & ML.")
+
+            if len(df_company_hist) >= 2:
+                if df_company_hist["FH_Score"].iloc[-1] > df_company_hist["FH_Score"].iloc[-2]:
+                    insights.append("📈 Financial health improved vs last FY.")
+                else:
+                    insights.append("📉 Financial health declined vs last FY.")
+
+            for i in insights:
+                st.write(i)
+
+            # -----------------------------------------------------------
+            # DOWNLOAD RESULTS
             # -----------------------------------------------------------
             st.subheader("📊 Prediction Results (All Companies)")
             st.dataframe(df_results)
