@@ -68,7 +68,8 @@ if master_file is not None:
         "Loan_Type_Code","Collateral_Value_num","LTV_num","Loan_Amount_num","Loan_Tenure_Months",
         "Existing_Loan_Sanctioned_num","Existing_Loan_Outstanding_num",
         "Promoter_Risk","Management_Risk","Industry_Risk","ESG_Risk",
-        "Document_Quality_Score","Loan_Type_EWS"
+        "Document_Quality_Score","Loan_Type_EWS","Growth_1Y","Growth_3Y_Avg","Trend_Slope"
+
     ]
 
     for f in FEATURES:
@@ -175,6 +176,7 @@ if input_file is not None:
             file_name="FH_Scoring_Results.xlsx",
             mime="application/vnd.ms-excel"
         )
+
 
 
 
