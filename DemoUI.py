@@ -311,26 +311,29 @@ if st.button("Calculate Risk"):
         st.pyplot(fig)
     else:
         st.info("No feature record found for selected company for driver analysis.")
-
+    
     # ============================================================
     #              MODEL PERFORMANCE METRICS (TRAIN)
     # ============================================================
     st.markdown("### 🔍 Model Performance Metrics")
-
+    
     y_pred_train = ridge.predict(X_train_full)
     model_accuracy = r2_score(y_train_full, y_pred_train)
     mae = mean_absolute_error(y_train_full, y_pred_train)
-    rmse = mean_squared_error(y_train_full, y_pred_train, squared=False)
+    
+    # RMSE calculation for older sklearn versions
+    rmse = mean_squared_error(y_train_full, y_pred_train) ** 0.5
+    
     precision_rate = np.mean(np.abs(y_train_full - y_pred_train) < 5)
-    # Proxy for how well ranking matches – simple correlation
     auc_score = np.corrcoef(y_train_full, y_pred_train)[0, 1]
-
+    
     c1, c2, c3 = st.columns(3)
     c1.metric("Model Accuracy (R²)", f"{model_accuracy*100:.1f}%")
     c2.metric("AUC Score (proxy)", f"{auc_score:.2f}")
     c3.metric("Precision Rate (±5 pts)", f"{precision_rate*100:.1f}%")
-
+    
     st.caption(f"MAE: {mae:.2f} | RMSE: {rmse:.2f}")
+    
 
     # ============================================================
     #              RISK ASSESSMENT SUMMARY
@@ -429,3 +432,4 @@ if st.button("Calculate Risk"):
         file_name="FH_Scoring_Results.xlsx",
         mime="application/vnd.ms-excel"
     )
+
