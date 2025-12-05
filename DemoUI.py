@@ -281,37 +281,49 @@ if st.button("Calculate Risk"):
     # ============================================================
     #                KEY RISK DRIVERS (Pseudo-SHAP)
     # ============================================================
-    st.markdown("### 📉 Key Risk Drivers (Model Impact)")
+   import plotly.graph_objects as go
 
-    # Latest index for selected company in engineered input
-    selected_indices = df_input_eng[df_input_eng["Company Name"] == selected_company].index
-    if len(selected_indices) > 0:
-        selected_idx = selected_indices[-1]
+# Top drivers: already in top_drivers (sorted by AbsImpact)
+dfd = top_drivers.sort_values("Impact")
 
-        coef = ridge.coef_
-        feature_row = X_pred.loc[selected_idx]
-        z_values = (feature_row - feature_means) / feature_stds
-        impacts = z_values * coef
+colors = ["#d62728" if v < 0 else "#2ca02c" for v in dfd["Impact"]]
 
-        driver_df = pd.DataFrame({
-            "Feature": FEATURES,
-            "Impact": impacts.values
-        })
-        driver_df["AbsImpact"] = driver_df["Impact"].abs()
+fig = go.Figure()
 
-        # Top 5 absolute impacts
-        top_drivers = driver_df.sort_values("AbsImpact", ascending=False).head(5)
+fig.add_trace(go.Bar(
+    x=dfd["Impact"],
+    y=dfd["Feature"],
+    orientation='h',
+    marker=dict(
+        color=colors,
+        line=dict(color="black", width=0.5)
+    ),
+    text=[f"{v:.2f}" for v in dfd["Impact"]],
+    textposition="auto",
+))
 
-        fig, ax = plt.subplots(figsize=(8, 4))
-        colors = ["red" if v < 0 else "green" for v in top_drivers["Impact"]]
-        ax.barh(top_drivers["Feature"], top_drivers["Impact"], color=colors)
-        ax.set_xlabel("Impact on Risk Score (relative)")
-        ax.set_title(f"Top Risk Drivers - {selected_company}")
-        plt.tight_layout()
-        st.pyplot(fig)
-    else:
-        st.info("No feature record found for selected company for driver analysis.")
-    
+fig.update_layout(
+    title=f"<b>Top Risk Drivers – {selected_company}</b>",
+    title_x=0.5,
+    height=400,
+    margin=dict(l=80, r=40, t=60, b=40),
+    plot_bgcolor="#f8f9fa",
+    paper_bgcolor="#ffffff",
+    xaxis=dict(
+        title="Impact on Risk Score",
+        zeroline=True,
+        zerolinewidth=1,
+        zerolinecolor="#999",
+        gridcolor="#ddd"
+    ),
+    yaxis=dict(
+        title="",
+        automargin=True
+    ),
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
     # ============================================================
     #              MODEL PERFORMANCE METRICS (TRAIN)
     # ============================================================
@@ -432,4 +444,5 @@ if st.button("Calculate Risk"):
         file_name="FH_Scoring_Results.xlsx",
         mime="application/vnd.ms-excel"
     )
+
 
