@@ -111,6 +111,10 @@ if st.button("Calculate Risk"):
 
         st.success("Training Completed!")
 
+    # Pre-compute stats for driver analysis
+    feature_means = X_train_full.mean()
+    feature_stds = X_train_full.std().replace(0, 1)
+
     # ==================== PREP INPUT ====================
     with st.spinner("Engineering input dataset..."):
         df_input_eng = engineer_dataframe(df_input_raw)
@@ -152,11 +156,13 @@ if st.button("Calculate Risk"):
     company_list = df_input_eng["Company Name"].dropna().unique()
     selected_company = st.selectbox("Select a company", company_list)
 
-    comp_result = df_results[df_results["Company Name"] == selected_company].iloc[-1]
+    # Get latest record for selected company
+    comp_mask = df_results["Company Name"] == selected_company
+    comp_result = df_results[comp_mask].iloc[-1]
     fh_pred = comp_result["FH_Score_Ridge"]
 
     # ------------------------ SCORE CARDS ------------------------
-    st.markdown(" Score Summary")
+    st.markdown("### 📌 Score Summary")
 
     col1, col2 = st.columns(2)
 
@@ -171,9 +177,202 @@ if st.button("Calculate Risk"):
         st.metric("Risk Band (ML)", comp_result["RiskBand_Ridge"])
 
     # ============================================================
+    #     AI MODEL FEEDBACK & SCORECARD (Big Card + SB bands)
+    # ============================================================
+    st.markdown("### 🧠 AI Model Feedback & Scorecard")
+
+    sb_code, sb_text, sb_range = sb_label(fh_pred)
+
+    score_col, band_col = st.columns([1.2, 1.8])
+
+    with score_col:
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#f5f3ff;
+                padding:24px;
+                border-radius:16px;
+                text-align:center;
+                border:1px solid #e0ddff;
+            ">
+                <div style="font-size:16px;font-weight:600;color:#555;">
+                    Risk Score
+                </div>
+                <div style="font-size:40px;font-weight:800;color:#4f46e5;margin-top:4px;">
+                    {fh_pred:.0f}
+                </div>
+                <div style="font-size:16px;font-weight:600;color:#f97373;margin-top:4px;">
+                    {sb_code} - {sb_text}
+                </div>
+                <div style="font-size:12px;color:#777;margin-top:2px;">
+                    Range {sb_range}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with band_col:
+        st.markdown("**Risk Band Classification**")
+        band_data = [
+            ("SB1","Excellent","90-100"),
+            ("SB2","Very Good","85-89"),
+            ("SB3","Good","80-84"),
+            ("SB4","Good","75-79"),
+            ("SB5","Satisfactory","70-74"),
+            ("SB6","Satisfactory","65-69"),
+            ("SB7","Acceptable","60-64"),
+            ("SB8","Acceptable","55-59"),
+            ("SB9","Marginal","50-54"),
+            ("SB10","Marginal","45-49"),
+            ("SB11","Weak","40-44"),
+            ("SB12","Poor","35-39"),
+            ("SB13","Poor","30-34"),
+            ("SB14","Very Poor","25-29"),
+            ("SB15","Very Poor","20-24"),
+            ("SB16","Unacceptable","0-19"),
+        ]
+        df_bands = pd.DataFrame(band_data, columns=["SB Code","Description","Score Range"])
+        st.table(df_bands)
+
+    # ============================================================
+    #          DECISION RECOMMENDATION (Approve / Reject)
+    # ============================================================
+    st.markdown("### 🧾 Decision Recommendation")
+
+    risk_band_ml = comp_result["RiskBand_Ridge"]
+
+    if risk_band_ml == "Low":
+        decision = "Approve"
+        decision_color = "#16a34a"
+        decision_desc = "Application meets minimum risk criteria for approval."
+    elif risk_band_ml == "Moderate":
+        decision = "Review"
+        decision_color = "#f59e0b"
+        decision_desc = "Application is borderline and requires further assessment."
+    else:
+        decision = "Reject"
+        decision_color = "#dc2626"
+        decision_desc = "Application does not meet minimum risk criteria for approval."
+
+    st.markdown(
+        f"""
+        <div style="
+            background-color:#fef2f2;
+            border:1px solid #fecaca;
+            padding:18px;
+            border-radius:12px;
+            max-width:600px;
+        ">
+            <div style="font-size:14px;color:#b91c1c;font-weight:600;">
+                Decision Recommendation
+            </div>
+            <div style="font-size:22px;font-weight:800;color:{decision_color};margin-top:4px;">
+                {decision}
+            </div>
+            <div style="font-size:13px;color:#7f1d1d;margin-top:4px;">
+                {decision_desc}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # ============================================================
+    #                KEY RISK DRIVERS (Pseudo-SHAP)
+    # ============================================================
+    st.markdown("### 📉 Key Risk Drivers (Model Impact)")
+
+    # Latest index for selected company in engineered input
+    selected_indices = df_input_eng[df_input_eng["Company Name"] == selected_company].index
+    if len(selected_indices) > 0:
+        selected_idx = selected_indices[-1]
+
+        coef = ridge.coef_
+        feature_row = X_pred.loc[selected_idx]
+        z_values = (feature_row - feature_means) / feature_stds
+        impacts = z_values * coef
+
+        driver_df = pd.DataFrame({
+            "Feature": FEATURES,
+            "Impact": impacts.values
+        })
+        driver_df["AbsImpact"] = driver_df["Impact"].abs()
+
+        # Top 5 absolute impacts
+        top_drivers = driver_df.sort_values("AbsImpact", ascending=False).head(5)
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+        colors = ["red" if v < 0 else "green" for v in top_drivers["Impact"]]
+        ax.barh(top_drivers["Feature"], top_drivers["Impact"], color=colors)
+        ax.set_xlabel("Impact on Risk Score (relative)")
+        ax.set_title(f"Top Risk Drivers - {selected_company}")
+        plt.tight_layout()
+        st.pyplot(fig)
+    else:
+        st.info("No feature record found for selected company for driver analysis.")
+
+    # ============================================================
+    #              MODEL PERFORMANCE METRICS (TRAIN)
+    # ============================================================
+    st.markdown("### 🔍 Model Performance Metrics")
+
+    y_pred_train = ridge.predict(X_train_full)
+    model_accuracy = r2_score(y_train_full, y_pred_train)
+    mae = mean_absolute_error(y_train_full, y_pred_train)
+    rmse = mean_squared_error(y_train_full, y_pred_train, squared=False)
+    precision_rate = np.mean(np.abs(y_train_full - y_pred_train) < 5)
+    # Proxy for how well ranking matches – simple correlation
+    auc_score = np.corrcoef(y_train_full, y_pred_train)[0, 1]
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Model Accuracy (R²)", f"{model_accuracy*100:.1f}%")
+    c2.metric("AUC Score (proxy)", f"{auc_score:.2f}")
+    c3.metric("Precision Rate (±5 pts)", f"{precision_rate*100:.1f}%")
+
+    st.caption(f"MAE: {mae:.2f} | RMSE: {rmse:.2f}")
+
+    # ============================================================
+    #              RISK ASSESSMENT SUMMARY
+    # ============================================================
+    st.markdown("### 📋 Risk Assessment Summary")
+
+    if len(selected_indices) > 0:
+        # Use same driver_df from above if exists, else recompute quickly
+        if 'driver_df' not in locals():
+            feature_row = X_pred.loc[selected_idx]
+            z_values = (feature_row - feature_means) / feature_stds
+            impacts = z_values * ridge.coef_
+            driver_df = pd.DataFrame({
+                "Feature": FEATURES,
+                "Impact": impacts.values
+            })
+
+        positive = driver_df[driver_df["Impact"] > 0].sort_values("Impact", ascending=False).head(3)
+        negative = driver_df[driver_df["Impact"] < 0].sort_values("Impact", ascending=True).head(3)
+
+        col_pos, col_neg = st.columns(2)
+
+        with col_pos:
+            st.write("#### ✅ Positive Factors")
+            if len(positive) == 0:
+                st.write("- None")
+            for _, r in positive.iterrows():
+                st.write(f"- **{r['Feature']}** : +{r['Impact']:.2f}")
+
+        with col_neg:
+            st.write("#### ❌ Risk Concerns")
+            if len(negative) == 0:
+                st.write("- None")
+            for _, r in negative.iterrows():
+                st.write(f"- **{r['Feature']}** : {r['Impact']:.2f}")
+    else:
+        st.info("No driver information available for summary.")
+
+    # ============================================================
     #     FORMULA TREND GRAPH (Historical)
     # ============================================================
-    st.markdown(" 📈 Formula FH Trend (Historical)")
+    st.markdown("### 📈 Formula FH Trend (Historical)")
 
     hist = df_master[df_master["Company Name"] == selected_company].sort_values("FY_num")
 
@@ -196,7 +395,7 @@ if st.button("Calculate Risk"):
     # ============================================================
     #     ML TREND GRAPH (Next FY Prediction)
     # ============================================================
-    st.markdown(" ML Predicted Trend ( Next FY)")
+    st.markdown("### 🤖 ML Predicted Trend (Next FY)")
 
     if not hist.empty:
 
@@ -230,4 +429,3 @@ if st.button("Calculate Risk"):
         file_name="FH_Scoring_Results.xlsx",
         mime="application/vnd.ms-excel"
     )
-
