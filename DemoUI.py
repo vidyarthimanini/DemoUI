@@ -11,6 +11,7 @@ import io, warnings
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from Model import (
     engineer_dataframe,
@@ -161,6 +162,10 @@ if st.button("Calculate Risk"):
     comp_result = df_results[comp_mask].iloc[-1]
     fh_pred = comp_result["FH_Score_Ridge"]
 
+    # indices of selected company in engineered input (for driver analysis)
+    selected_indices = df_input_eng[df_input_eng["Company Name"] == selected_company].index
+    selected_idx = selected_indices[-1] if len(selected_indices) > 0 else None
+
     # ------------------------ SCORE CARDS ------------------------
     st.markdown("### 📌 Score Summary")
 
@@ -279,82 +284,96 @@ if st.button("Calculate Risk"):
     )
 
     # ============================================================
-    #                KEY RISK DRIVERS (Pseudo-SHAP)
+    #                KEY RISK DRIVERS (Plotly pseudo-SHAP)
     # ============================================================
-   import plotly.graph_objects as go
+    st.markdown("### 📉 Key Risk Drivers (Model Impact)")
 
-# Top drivers: already in top_drivers (sorted by AbsImpact)
-dfd = top_drivers.sort_values("Impact")
+    if selected_idx is not None:
+        coef = ridge.coef_
+        feature_row = X_pred.loc[selected_idx]
+        z_values = (feature_row - feature_means) / feature_stds
+        impacts = z_values * coef
 
-colors = ["#d62728" if v < 0 else "#2ca02c" for v in dfd["Impact"]]
+        driver_df = pd.DataFrame({
+            "Feature": FEATURES,
+            "Impact": impacts.values
+        })
+        driver_df["AbsImpact"] = driver_df["Impact"].abs()
 
-fig = go.Figure()
+        # Top 5 absolute impacts
+        top_drivers = driver_df.sort_values("AbsImpact", ascending=False).head(5)
+        dfd = top_drivers.sort_values("Impact")  # sort for nicer bar order
 
-fig.add_trace(go.Bar(
-    x=dfd["Impact"],
-    y=dfd["Feature"],
-    orientation='h',
-    marker=dict(
-        color=colors,
-        line=dict(color="black", width=0.5)
-    ),
-    text=[f"{v:.2f}" for v in dfd["Impact"]],
-    textposition="auto",
-))
+        colors = ["#d62728" if v < 0 else "#2ca02c" for v in dfd["Impact"]]
 
-fig.update_layout(
-    title=f"<b>Top Risk Drivers – {selected_company}</b>",
-    title_x=0.5,
-    height=400,
-    margin=dict(l=80, r=40, t=60, b=40),
-    plot_bgcolor="#f8f9fa",
-    paper_bgcolor="#ffffff",
-    xaxis=dict(
-        title="Impact on Risk Score",
-        zeroline=True,
-        zerolinewidth=1,
-        zerolinecolor="#999",
-        gridcolor="#ddd"
-    ),
-    yaxis=dict(
-        title="",
-        automargin=True
-    ),
-)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=dfd["Impact"],
+            y=dfd["Feature"],
+            orientation="h",
+            marker=dict(
+                color=colors,
+                line=dict(color="black", width=0.5)
+            ),
+            text=[f"{v:.2f}" for v in dfd["Impact"]],
+            textposition="auto",
+        ))
 
-st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(
+            title=f"<b>Top Risk Drivers – {selected_company}</b>",
+            title_x=0.5,
+            height=400,
+            margin=dict(l=80, r=40, t=60, b=40),
+            plot_bgcolor="#f8f9fa",
+            paper_bgcolor="#ffffff",
+            xaxis=dict(
+                title="Impact on Risk Score",
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor="#999",
+                gridcolor="#ddd"
+            ),
+            yaxis=dict(
+                title="",
+                automargin=True
+            ),
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No feature record found for selected company for driver analysis.")
 
     # ============================================================
     #              MODEL PERFORMANCE METRICS (TRAIN)
     # ============================================================
     st.markdown("### 🔍 Model Performance Metrics")
-    
+
     y_pred_train = ridge.predict(X_train_full)
     model_accuracy = r2_score(y_train_full, y_pred_train)
     mae = mean_absolute_error(y_train_full, y_pred_train)
-    
-    # RMSE calculation for older sklearn versions
+
+    # RMSE calculation for older sklearn versions (no squared arg)
     rmse = mean_squared_error(y_train_full, y_pred_train) ** 0.5
-    
+
     precision_rate = np.mean(np.abs(y_train_full - y_pred_train) < 5)
     auc_score = np.corrcoef(y_train_full, y_pred_train)[0, 1]
-    
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Model Accuracy (R²)", f"{model_accuracy*100:.1f}%")
     c2.metric("AUC Score (proxy)", f"{auc_score:.2f}")
     c3.metric("Precision Rate (±5 pts)", f"{precision_rate*100:.1f}%")
-    
+
     st.caption(f"MAE: {mae:.2f} | RMSE: {rmse:.2f}")
-    
 
     # ============================================================
     #              RISK ASSESSMENT SUMMARY
     # ============================================================
     st.markdown("### 📋 Risk Assessment Summary")
 
-    if len(selected_indices) > 0:
-        # Use same driver_df from above if exists, else recompute quickly
-        if 'driver_df' not in locals():
+    if selected_idx is not None:
+        # driver_df is already computed above inside Key Drivers block.
+        # If for some reason it isn't, recompute quickly.
+        if "driver_df" not in locals():
             feature_row = X_pred.loc[selected_idx]
             z_values = (feature_row - feature_means) / feature_stds
             impacts = z_values * ridge.coef_
@@ -363,8 +382,12 @@ st.plotly_chart(fig, use_container_width=True)
                 "Impact": impacts.values
             })
 
-        positive = driver_df[driver_df["Impact"] > 0].sort_values("Impact", ascending=False).head(3)
-        negative = driver_df[driver_df["Impact"] < 0].sort_values("Impact", ascending=True).head(3)
+        positive = driver_df[driver_df["Impact"] > 0].sort_values(
+            "Impact", ascending=False
+        ).head(3)
+        negative = driver_df[driver_df["Impact"] < 0].sort_values(
+            "Impact", ascending=True
+        ).head(3)
 
         col_pos, col_neg = st.columns(2)
 
@@ -444,5 +467,3 @@ st.plotly_chart(fig, use_container_width=True)
         file_name="FH_Scoring_Results.xlsx",
         mime="application/vnd.ms-excel"
     )
-
-
