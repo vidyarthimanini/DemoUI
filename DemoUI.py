@@ -351,6 +351,7 @@ if st.button("Calculate Risk"):
             ),
             text=[f"{v:.2f}" for v in dfd["Impact"]],
             textposition="auto",
+            textfont=dict(color="black")
         ))
 
         fig.update_layout(
@@ -442,7 +443,7 @@ if st.button("Calculate Risk"):
     # ============================================================
     #     FORMULA TREND GRAPH (Historical)
     # ============================================================
-    st.markdown("### 📈 Formula FH Trend (Historical)")
+    st.markdown("### Formula FH Trend (Historical)")
 
     hist = df_master[df_master["Company Name"] == selected_company].sort_values("FY_num")
 
@@ -463,7 +464,7 @@ if st.button("Calculate Risk"):
     # ============================================================
     #     ML TREND GRAPH (Next FY Prediction)
     # ============================================================
-    st.markdown("### 🤖 ML Predicted Trend (Next FY)")
+    st.markdown("### ML Predicted Trend (Next FY)")
 
     if not hist.empty:
         years_ml = hist["FY_num"].astype(int).tolist()
@@ -496,3 +497,4 @@ if st.button("Calculate Risk"):
         file_name="FH_Scoring_Results.xlsx",
         mime="application/vnd.ms-excel"
     )
+
