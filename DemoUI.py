@@ -30,7 +30,6 @@ st.write("Upload datasets → Click Calculate → Training + Prediction + Dashbo
 
 st.sidebar.header("⚙ Settings")
 
-
 # ============================================================
 #   SECTION 1 — UPLOAD MASTER DATASET (Training Data)
 # ============================================================
@@ -47,7 +46,6 @@ if master_file is not None:
 
     st.session_state["MASTER_ENG"] = df_master_eng
 
-
 # ============================================================
 #   SECTION 2 — UPLOAD INPUT DATASET (Prediction Input)
 # ============================================================
@@ -59,7 +57,6 @@ if input_file is not None:
     df_input_raw = pd.read_excel(input_file, engine="openpyxl", dtype=object)
     st.success(f"Input dataset loaded — {len(df_input_raw)} rows")
     st.session_state["INPUT_RAW"] = df_input_raw
-
 
 # ============================================================
 #   SECTION 3 — SINGLE BUTTON → TRAIN + PREDICT + DASHBOARD
@@ -89,7 +86,8 @@ if st.button("Calculate Risk"):
         "Existing_Loan_Sanctioned_num","Existing_Loan_Outstanding_num",
         "Promoter_Risk","Management_Risk","Industry_Risk","ESG_Risk",
         "Document_Quality_Score","Loan_Type_EWS",
-        "Growth_1Y","Growth_3Y_Avg","Trend_Slope"
+        "Growth_1Y","Growth_3Y_Avg","Trend_Slope",
+        "KYC_Score"  # NEW FEATURE
     ]
 
     for f in FEATURES:
@@ -180,6 +178,42 @@ if st.button("Calculate Risk"):
         st.metric("FH Score (ML Prediction)", f"{fh_pred:.2f}")
         st.metric("SB Rating (ML)", comp_result["SB_Ridge"])
         st.metric("Risk Band (ML)", comp_result["RiskBand_Ridge"])
+
+    # ------------------------ KYC STATUS BLOCK ------------------------
+    st.markdown("#### 🧾 KYC & Compliance Status")
+
+    if selected_idx is not None:
+        row_flags = df_input_eng.loc[selected_idx]
+
+        def _flag(v):
+            try:
+                return float(v) >= 0.5
+            except:
+                return str(v).strip().lower() in ["1","yes","y","true","t"]
+
+        kyc_issues = []
+
+        if _flag(row_flags.get("PAN_Missing_Flag", 0)):
+            kyc_issues.append("PAN missing")
+        if _flag(row_flags.get("PAN_Format_Invalid_Flag", 0)):
+            kyc_issues.append("PAN format invalid")
+        if _flag(row_flags.get("PAN_Name_Mismatch_Flag", 0)):
+            kyc_issues.append("PAN name mismatch")
+        if _flag(row_flags.get("GSTIN_Missing_Flag", 0)):
+            kyc_issues.append("GSTIN missing")
+        if _flag(row_flags.get("GSTIN_Invalid_Flag", 0)):
+            kyc_issues.append("GSTIN format invalid")
+        if _flag(row_flags.get("GSTIN_Name_Mismatch_Flag", 0)):
+            kyc_issues.append("GSTIN name mismatch")
+
+        if len(kyc_issues) == 0:
+            st.success("All PAN / GSTIN details appear complete and consistent for this application.")
+        else:
+            st.warning("KYC / GST Compliance Issues:")
+            for issue in kyc_issues:
+                st.write(f"- {issue}")
+    else:
+        st.info("No KYC information available for the selected company.")
 
     # ============================================================
     #     AI MODEL FEEDBACK & SCORECARD (Big Card + SB bands)
@@ -352,7 +386,7 @@ if st.button("Calculate Risk"):
     model_accuracy = r2_score(y_train_full, y_pred_train)
     mae = mean_absolute_error(y_train_full, y_pred_train)
 
-    # RMSE calculation for older sklearn versions (no squared arg)
+    # RMSE calculation (sklearn without squared argument support)
     rmse = mean_squared_error(y_train_full, y_pred_train) ** 0.5
 
     precision_rate = np.mean(np.abs(y_train_full - y_pred_train) < 5)
@@ -371,8 +405,6 @@ if st.button("Calculate Risk"):
     st.markdown("### 📋 Risk Assessment Summary")
 
     if selected_idx is not None:
-        # driver_df is already computed above inside Key Drivers block.
-        # If for some reason it isn't, recompute quickly.
         if "driver_df" not in locals():
             feature_row = X_pred.loc[selected_idx]
             z_values = (feature_row - feature_means) / feature_stds
@@ -415,7 +447,6 @@ if st.button("Calculate Risk"):
     hist = df_master[df_master["Company Name"] == selected_company].sort_values("FY_num")
 
     if not hist.empty:
-
         years_hist = hist["FY_num"].astype(int).tolist()
 
         plt.figure(figsize=(8,4))
@@ -426,7 +457,6 @@ if st.button("Calculate Risk"):
         plt.title(f"Historical FH Trend - {selected_company}")
         plt.grid(alpha=0.3)
         st.pyplot(plt)
-
     else:
         st.info("No historical records found.")
 
@@ -436,7 +466,6 @@ if st.button("Calculate Risk"):
     st.markdown("### 🤖 ML Predicted Trend (Next FY)")
 
     if not hist.empty:
-
         years_ml = hist["FY_num"].astype(int).tolist()
         scores_ml = hist["FH_Score"].tolist()
 
